@@ -292,6 +292,14 @@ namespace eval ::TclOpenCL {
         }
     }
 
-    proc kernel {name arglist body} {
+    proc program {name body} {
+        # TODO define an OpenCL program and kernels with a very thin DSL:
+        # cl::program Foo {
+        #   cl::kernel compute_stuff -ret void {__global a_x, __global a_y} {
+        #     ...
+        #   }
+        # }
+        # set f [[Foo new $ctx] buildForDevices $deviceList]
+        # $f compute_stuff $a_vec $b_vec
     }
 }
