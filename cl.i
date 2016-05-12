@@ -508,6 +508,7 @@ typedef void *cl_kernel;
 typedef cl_bitfield cl_command_queue_properties;
 %array_functions(cl_command_queue_properties, cl_command_queue_properties_array)
 
+typedef cl_uint cl_program_info;
 typedef cl_uint cl_platform_info;
 typedef cl_uint cl_device_info;
 typedef cl_uint cl_device_mem_cache_type;
@@ -542,7 +543,7 @@ typedef cl_bitfield cl_kernel_arg_type_qualifier;
     Tcl_SetResult(interp, "Could not initialize VecTcl", TCL_STATIC);
     return TCL_ERROR;
   }
-  $1 = $input;
+  $1 = 0;
 }
 %{
 int tclOpenCLInit(int x) {
@@ -551,24 +552,44 @@ int tclOpenCLInit(int x) {
 %}
 int tclOpenCLInit(int INITVECTCL);
 
+/*** TCL/OPENCL C INTEGRATION ***/
+
+%typemap(in) (const char **CL_PROGRAM, const size_t *CL_PROGRAM_LENGTHS) {
+  char *prog;
+  int len;
+  prog = Tcl_GetStringFromObj($input, &len);
+  $1 = calloc(1, sizeof(char *));
+  *$1 = calloc(1, len);
+  memcpy(*$1, prog, len);
+  $2 = calloc(1, sizeof(size_t *));
+  *$2 = len;
+}
+
+%typemap(freearg) (const char **CL_PROGRAM, const size_t *CL_PROGRAM_LENGTHS) {
+  if ($1) { free(*$1); }
+  free($1);
+  free($2);
+}
+
 /*** FUNCTIONS ***/
 
-cl_int clGetPlatformIDs(cl_uint, cl_platform_id *INOUT, cl_uint *OUTPUT);
-
 /**
- * clGetPlatformInfo returns either a string or a ulong depending on the info
+ * clGet*Info returns either a string or a ulong depending on the info
  * that was queried. It's much easier to handle this by just wrapping it with
  * two separate functions to handle the cases.
  */
 
-%cstring_output_allocate_size(char **s_out, size_t *slen_out, free(*$1));
-cl_int clGetPlatformInfoString(cl_platform_id id, cl_platform_info what, char **s_out, size_t *slen_out);
+cl_int clGetPlatformIDs(cl_uint, cl_platform_id *INOUT, cl_uint *OUTPUT);
+
+%define makeGetInfoString(name,obj_type,prop_type)
+%cstring_output_allocate_size(char **S_OUT, size_t *SLEN_OUT, free(*$1));
+cl_int clGet##name##InfoString(obj_type, prop_type, char **S_OUT, size_t *SLEN_OUT);
 %{
-cl_int clGetPlatformInfoString(cl_platform_id id, cl_platform_info what, char **s_out, size_t *slen_out) {
+cl_int clGet##name##InfoString(obj_type obj, prop_type what, char **s_out, size_t *slen_out) {
   cl_int err = CL_SUCCESS;
   size_t sz = 100, real_sz;
   char *out = calloc(1, sz), *safety_first;
-  while (clGetPlatformInfo(id, what, sz, out, &real_sz) == CL_INVALID_VALUE) {
+  while (clGet##name##Info(obj, what, sz, out, &real_sz) == CL_INVALID_VALUE) {
     safety_first = realloc(out, sz * 2);
     if (safety_first == NULL) {
       err = CL_OUT_OF_HOST_MEMORY;
@@ -594,6 +615,9 @@ cl_int clGetPlatformInfoString(cl_platform_id id, cl_platform_info what, char **
   return err;
 }
 %}
+%enddef
+
+makeGetInfoString(Platform,cl_platform_id,cl_platform_info)
 
 cl_int clGetPlatformInfoULong(cl_platform_id id, cl_platform_info what, cl_ulong *OUTPUT);
 %{
@@ -610,43 +634,11 @@ cl_int clGetPlatformInfoULong(cl_platform_id id, cl_platform_info what, cl_ulong
 
 cl_int clGetDeviceIDs(cl_platform_id, cl_device_type, cl_uint, cl_device_id *INOUT, cl_uint *OUTPUT);
 
-%cstring_output_allocate_size(char **s_out, size_t *slen_out, free(*$1));
-cl_int clGetDeviceInfoString(cl_device_id id, cl_device_info what, char **s_out, size_t *slen_out);
-%{
-cl_int clGetDeviceInfoString(cl_device_id id, cl_device_info what, char **s_out, size_t *slen_out) {
-  cl_int err = CL_SUCCESS;
-  size_t sz = 100, real_sz;
-  char *out = calloc(1, sz), *safety_first;
-  while (clGetDeviceInfo(id, what, sz, out, &real_sz) == CL_INVALID_VALUE) {
-    safety_first = realloc(out, sz * 2);
-    if (safety_first == NULL) {
-      err = CL_OUT_OF_HOST_MEMORY;
-      goto catch;
-    }
-    out = safety_first;
-    sz *= 2;
-  }
-
-  if (real_sz > CL_INT_MAX) {
-    err = CL_INVALID_VALUE;
-    goto catch;
-  }
-
-  *s_out = out;
-  *slen_out = real_sz;
-  return CL_SUCCESS;
-
- catch:
-  *s_out = NULL;
-  *slen_out = 0;
-  free(out);
-  return err;
-}
-%}
+makeGetInfoString(Device,cl_device_id,cl_device_info)
 
 %define typedClGetDeviceInfo(name,type)
 cl_int clGetDeviceInfo ## name (cl_device_id id, cl_device_info what, type *OUTPUT);
-%inline %{
+%{
 cl_int clGetDeviceInfo ## name (cl_device_id id, cl_device_info what, type *out) {
   type val;
   cl_int err;
@@ -676,6 +668,8 @@ typedClGetDeviceInfo(DeviceID,cl_device_id)
 cl_int clRetainDevice(cl_device_id);
 cl_int clReleaseDevice(cl_device_id);
 
+
+cl_context clCreateContextSafe(cl_platform_id, cl_uint, cl_device_id *, cl_uint *OUTPUT);
 %{
 /*#include <string.h>
 #include <setjmp.h>  // This gonna be good
@@ -687,7 +681,7 @@ struct lovecraftian_exception_handler {
 };
 void CL_CALLBACK handle_cl_exception(const char *msg, const void *binary_dump, size_t bd_size, void *udata) {
   struct lovecraftian_exception_handler *e = udata;
-  e->msg = calloc(1, strlen(msg) + 1);
+  e->msg = calloc(strlen(msg) + 1, 1);
   strncpy(e->msg, msg, strlen(msg));
   e->data = binary_dump;
   e->data_sz = bd_size;
@@ -708,13 +702,11 @@ cl_context clCreateContextSafe(cl_platform_id platform, cl_uint num_devices, cl_
                                cl_uint *err_ret) {
   cl_context_properties props[3];
   props[0] = CL_CONTEXT_PLATFORM;
-  props[1] = platform;
+  props[1] = (intptr_t)platform;
   props[2] = 0;
   return clCreateContext(props, num_devices, devices, NULL, NULL, err_ret);
 }
 %}
-
-cl_context clCreateContextSafe(cl_platform_id, cl_uint, cl_device_id *, cl_uint *OUTPUT);
 
 cl_int clRetainContext(cl_context);
 cl_int clReleaseContext(cl_context);
@@ -732,6 +724,7 @@ cl_int clReleaseCommandQueue(cl_command_queue);
 
 
 cl_mem clCreateBuffer(cl_context, cl_mem_flags, size_t, cl_byte *, cl_int *OUTPUT);
+
 // buffer/size in opposite order from the real function to ease writing typemaps
 // slightly.
 cl_mem clCreateBufferFromNumArray(cl_context, cl_mem_flags, void *NUMARRAY, size_t NUMARRAY_SIZE, cl_int *OUTPUT);
@@ -740,3 +733,37 @@ cl_mem clCreateBufferFromNumArray(cl_context c, cl_mem_flags fl, void *na, size_
   return clCreateBuffer(c, fl, na_size, na, err_ret);
 }
 %}
+
+
+cl_program clCreateProgramWithSource(cl_context, cl_uint, const char **CL_PROGRAM,
+                                     const size_t *CL_PROGRAM_LENGTHS, cl_int *OUTPUT);
+cl_int clRetainProgram(cl_program);
+cl_int clReleaseProgram(cl_program);
+
+cl_int clBuildProgramSync(cl_program, cl_uint, cl_device_id *, char *);
+%{
+cl_int clBuildProgramSync(cl_program p, cl_uint dev_cnt, cl_device_id *devs, char *opts) {
+  return clBuildProgram(p, dev_cnt, devs, opts, NULL, NULL);
+}
+%}
+
+%define typedClGetProgramInfo(name,type)
+cl_int clGetProgramInfo ## name (cl_program prg, cl_program_info what, type *OUTPUT);
+%{
+cl_int clGetProgramInfo ## name (cl_program prg, cl_program_info what, type *out) {
+  type val;
+  cl_int err;
+  size_t real_sz;
+  err = clGetProgramInfo(prg, what, sizeof val, &val, &real_sz);
+  assert(real_sz == sizeof val);
+  *out = val;
+  return err;
+}
+%}
+%enddef
+
+typedClGetProgramInfo(Bool,cl_bool)
+typedClGetProgramInfo(UInt,cl_uint)
+typedClGetProgramInfo(SizeT,size_t)
+
+makeGetInfoString(Program,cl_program,cl_program_info)

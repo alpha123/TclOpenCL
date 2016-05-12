@@ -5,7 +5,7 @@ package require vectcl
 tclOpenCLInit 0
 
 namespace eval ::TclOpenCL {
-    namespace export Buffer Context CommandQueue platforms
+    namespace export Buffer Context CommandQueue kernel platforms Program
 
     proc capitalize {s} {
         string replace $s 0 0 [string toupper [string index $s 0]]
@@ -46,7 +46,7 @@ namespace eval ::TclOpenCL {
             set _platform $platform
             set _id $id
         }
-        # Memory management is just for subdevices and has no affect if this is
+        # Memory management is just for subdevices and has no effect if this is
         # a root-level device.
         refcounted device _id
 
@@ -247,5 +247,51 @@ namespace eval ::TclOpenCL {
         }
 
         method ptr {} {set _ptr}
+    }
+
+    oo::class create Program {
+        variable _ptr _src
+
+        constructor {ctx code} {
+            set res [clCreateProgramWithSource [$ctx ptr] 1 $code]
+            if {[lindex $res 1] != $::CL_SUCCESS} {
+                return -code error "Could not create OpenCL program"
+            }
+            set _src $code
+            set _ptr [lindex $res 0]
+        }
+        refcounted program
+
+        method ptr {} {set _ptr}
+        method source {} {set _src}
+
+        method buildForDevices {devices args} {
+            set count [llength $devices]
+            set dev_ids [new_cl_device_id_array $count]
+            for {set i 0} {$i < $count} {incr i} {
+                cl_device_id_array_setitem $dev_ids $i [[lindex $devices $i] id]
+            }
+            set ok [clBuildProgramSync $_ptr $count $dev_ids [concat {*}$args]]
+            if {$ok != $::CL_SUCCESS} {
+                return -code error "Could not build OpenCL program"
+            }
+            self
+        }
+
+        method kernelNames {} {
+            my variable _kernelNames
+            if {[info exists _kernelNames]} {
+                return $_kernelNames
+            }
+
+            set res [clGetProgramInfoString $_ptr $::CL_PROGRAM_KERNEL_NAMES]
+            if {[lindex $res 0] != $::CL_SUCCESS} {
+                return -code error "Could not query OpenCL kernel names"
+            }
+            set _kernelNames [split [lindex $res 1] ";"]
+        }
+    }
+
+    proc kernel {name arglist body} {
     }
 }
