@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <CL/cl.h>
+#include <vectcl.h>
 %}
 
 /*** CL DEFINES ***/
@@ -18,6 +19,11 @@
 #else
 #define CL_CALLBACK
 #endif
+
+// Yay nVidia! Great job barely supporting a 5 year old version of OpenCL!
+#define CL_VERSION_1_0                              1
+#define CL_VERSION_1_1                              1
+#define CL_VERSION_1_2                              1
 
 /*** CONSTANTS ***/
 
@@ -482,6 +488,12 @@ typedef unsigned long long size_t;
 typedef long long intptr_t;
 typedef unsigned long long uintptr_t;
 
+// Not a real OpenCL type! Just used to pass raw memory to OpenCL functions from
+// Tcl.
+typedef unsigned char cl_byte;
+%{ typedef unsigned char cl_byte; %}
+%array_functions(cl_byte, cl_byte_array)
+
 typedef void *cl_platform_id;
 %array_functions(cl_platform_id, cl_platform_id_array)
 typedef void *cl_device_id;
@@ -514,6 +526,30 @@ typedef cl_bitfield cl_kernel_arg_type_qualifier;
 
 %apply char **OUTPUT { char **s_out };
 %apply size_t *OUTPUT { size_t *slen_out };
+
+/*** VECTCL INTEGRATION ***/
+
+%typemap(in) (void *NUMARRAY, size_t NUMARRAY_SIZE) {
+  Tcl_Obj *arr = $input;
+  NumArrayInfo *arr_info = NumArrayGetInfoFromObj(interp, arr);
+  $1 = NumArrayGetPtrFromObj(interp, arr);
+  $2 = arr_info->bufsize;
+}
+
+// Hack to get access to the interpreter so we can init VecTcl.
+%typemap(in) int INITVECTCL {
+  if (Vectcl_InitStubs(interp, "0.2", 0) == NULL) {
+    Tcl_SetResult(interp, "Could not initialize VecTcl", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  $1 = $input;
+}
+%{
+int tclOpenCLInit(int x) {
+  return x;
+}
+%}
+int tclOpenCLInit(int INITVECTCL);
 
 /*** FUNCTIONS ***/
 
@@ -683,8 +719,24 @@ cl_context clCreateContextSafe(cl_platform_id, cl_uint, cl_device_id *, cl_uint 
 cl_int clRetainContext(cl_context);
 cl_int clReleaseContext(cl_context);
 
-cl_command_queue clCreateCommandQueueWithProperties(cl_context, cl_device_id, cl_queue_properties *, cl_int *OUTPUT);
+
+#if CL_VERSION_2_0
+cl_command_queue clCreateCommandQueueWithProperties(cl_context, cl_device_id, cl_command_queue_properties *, cl_int *OUTPUT);
+cl_int clSetDefaultDeviceCommandQueue(cl_context, cl_device_id, cl_command_queue);
+#else
+cl_command_queue clCreateCommandQueue(cl_context, cl_device_id, cl_command_queue_properties, cl_int *OUTPUT);
+#endif
+
 cl_int clRetainCommandQueue(cl_command_queue);
 cl_int clReleaseCommandQueue(cl_command_queue);
 
-cl_int clSetDefaultDeviceCommandQueue(cl_context, cl_device_id, cl_command_queue);
+
+cl_mem clCreateBuffer(cl_context, cl_mem_flags, size_t, cl_byte *, cl_int *OUTPUT);
+// buffer/size in opposite order from the real function to ease writing typemaps
+// slightly.
+cl_mem clCreateBufferFromNumArray(cl_context, cl_mem_flags, void *NUMARRAY, size_t NUMARRAY_SIZE, cl_int *OUTPUT);
+%{
+cl_mem clCreateBufferFromNumArray(cl_context c, cl_mem_flags fl, void *na, size_t na_size, cl_int *err_ret) {
+  return clCreateBuffer(c, fl, na_size, na, err_ret);
+}
+%}

@@ -27,4 +27,4 @@ cl_wrap.o : cl_wrap.c
 	$(CC) -fpic -DUSE_TCL_STUBS $(CFLAGS) -I$(CL_INCLUDE_DIR) -c $< -o $@
 
 $(OUT) : cl_wrap.o
-	$(CC) $(CCLINKFLAGS) -L$(CL_LIB_DIR) -shared $< -o $@ -ltclstub86 -lOpenCL
+	$(CC) $(CCLINKFLAGS) -L$(CL_LIB_DIR) -shared $< -o $@ -lvectclstub02 -ltclstub86 -lOpenCL
