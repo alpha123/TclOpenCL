@@ -499,11 +499,16 @@ typedef void *cl_platform_id;
 typedef void *cl_device_id;
 %array_functions(cl_device_id, cl_device_id_array)
 
+typedef void *cl_event;
+%array_functions(cl_event, cl_event_array)
+
+typedef void *cl_kernel;
+%array_functions(cl_kernel, cl_kernel_array)
+
 typedef void *cl_context;
 typedef void *cl_command_queue;
 typedef void *cl_mem;
 typedef void *cl_program;
-typedef void *cl_kernel;
 
 typedef cl_bitfield cl_command_queue_properties;
 %array_functions(cl_command_queue_properties, cl_command_queue_properties_array)
@@ -513,6 +518,10 @@ typedef cl_uint cl_platform_info;
 typedef cl_uint cl_device_info;
 typedef cl_uint cl_device_mem_cache_type;
 typedef cl_uint cl_device_local_mem_type;
+typedef cl_uint cl_kernel_info;
+typedef cl_uint cl_kernel_arg_info;
+typedef cl_uint cl_kernel_arg_address_qualifier;
+typedef cl_uint cl_kernel_arg_access_qualifier;
 
 typedef cl_ulong cl_bitfield;
 typedef cl_bitfield cl_device_type;
@@ -734,6 +743,9 @@ cl_mem clCreateBufferFromNumArray(cl_context c, cl_mem_flags fl, void *na, size_
 }
 %}
 
+cl_int clEnqueueCopyBuffer(cl_command_queue, cl_mem, cl_mem, size_t, size_t, size_t,
+                           cl_uint, cl_event *, cl_event *OUTPUT);
+
 
 cl_program clCreateProgramWithSource(cl_context, cl_uint, const char **CL_PROGRAM,
                                      const size_t *CL_PROGRAM_LENGTHS, cl_int *OUTPUT);
@@ -767,3 +779,83 @@ typedClGetProgramInfo(UInt,cl_uint)
 typedClGetProgramInfo(SizeT,size_t)
 
 makeGetInfoString(Program,cl_program,cl_program_info)
+
+
+cl_kernel clCreateKernel(cl_program, char *, cl_int *OUTPUT);
+cl_int clRetainKernel(cl_kernel);
+cl_int clReleaseKernel(cl_kernel);
+
+%define typedClGetKernelInfo(name,type)
+cl_int clGetKernelInfo ## name (cl_kernel k, cl_kernel_info what, type *OUTPUT);
+%{
+cl_int clGetKernelInfo ## name (cl_kernel k, cl_kernel_info what, type *out) {
+  type val;
+  cl_int err;
+  size_t real_sz;
+  err = clGetKernelInfo(k, what, sizeof val, &val, &real_sz);
+  assert(real_sz == sizeof val);
+  *out = val;
+  return err;
+}
+%}
+%enddef
+
+typedClGetKernelInfo(UInt,cl_uint);
+
+makeGetInfoString(Kernel,cl_kernel,cl_kernel_info)
+
+// Can't use makeGetInfoString because clGetKernelArgInfo takes an extra
+// arg_indx parameter.
+%cstring_output_allocate_size(char **S_OUT, size_t *SLEN_OUT, free(*$1));
+cl_int clGetKernelArgInfoString(cl_kernel, cl_uint, cl_kernel_arg_info, char **S_OUT, size_t *SLEN_OUT);
+%{
+cl_int clGetKernelArgInfoString(cl_kernel obj, cl_uint idx, cl_kernel_arg_info what, char **s_out, size_t *slen_out) {
+  cl_int err = CL_SUCCESS;
+  size_t sz = 100, real_sz;
+  char *out = calloc(1, sz), *safety_first;
+  while (clGetKernelArgInfo(obj, idx, what, sz, out, &real_sz) == CL_INVALID_VALUE) {
+    safety_first = realloc(out, sz * 2);
+    if (safety_first == NULL) {
+      err = CL_OUT_OF_HOST_MEMORY;
+      goto catch;
+    }
+    out = safety_first;
+    sz *= 2;
+  }
+
+  if (real_sz > CL_INT_MAX) {
+    err = CL_INVALID_VALUE;
+    goto catch;
+  }
+
+  *s_out = out;
+  *slen_out = real_sz;
+  return CL_SUCCESS;
+
+catch:
+  *s_out = NULL;
+  *slen_out = 0;
+  free(out);
+  return err;
+}
+%}
+
+%define typedClGetKernelArgInfo(name,type)
+cl_int clGetKernelArgInfo ## name (cl_kernel k, cl_uint idx, cl_kernel_arg_info what, type *OUTPUT);
+%{
+cl_int clGetKernelArgInfo ## name (cl_kernel k, cl_uint idx, cl_kernel_arg_info what, type *out) {
+  type val;
+  cl_int err;
+  size_t real_sz;
+  err = clGetKernelArgInfo(k, idx, what, sizeof val, &val, &real_sz);
+  assert(real_sz == sizeof val);
+  *out = val;
+  return err;
+}
+%}
+%enddef
+
+typedClGetKernelArgInfo(AddressQualifier,cl_kernel_arg_address_qualifier)
+typedClGetKernelArgInfo(AccessQualifier,cl_kernel_arg_access_qualifier)
+typedClGetKernelArgInfo(TypeQualifier,cl_kernel_arg_type_qualifier)
+

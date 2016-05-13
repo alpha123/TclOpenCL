@@ -1,38 +1,41 @@
 package provide TclOpenCL 0.1
-package require TclOO
 package require vectcl
 
 tclOpenCLInit 0
 
 namespace eval ::TclOpenCL {
-    namespace export Buffer Context CommandQueue kernel platforms Program
+    namespace export Buffer Context CommandQueue platforms program Program
 
     proc capitalize {s} {
         string replace $s 0 0 [string toupper [string index $s 0]]
     }
 
-    proc ::oo::define::lazy {type name {family "device"}} {
+    proc camelize {s} {
+        subst [regsub -all -- {_(\w)} $s {[string toupper \1]}]
+    }
+
+    proc ::oo::define::lazy {family type name} {
         set clInfoType [set ::CL_[string toupper $family]_[string toupper $name]]
         set clInfoProc clGet[::TclOpenCL::capitalize $family]Info[::TclOpenCL::capitalize $type]
         set body [concat "{ my variable _$name; " if "{\[info exists _$name]} {
             set _$name
         }" else "{
-            set query \[$clInfoProc \[set _id] $clInfoType]
+            set query \[$clInfoProc \[set _ptr] $clInfoType]
             if {\[lindex \[set query] 0] != $::CL_SUCCESS} {
                 return -code error {Could not query OpenCL device $name}
             }
             set _$name \[lindex \[set query] 1]
         } }"]
-        uplevel 1 method $name "{}" $body
+        uplevel 1 method [::TclOpenCL::camelize $name] "{}" $body
     }
 
-    proc ::oo::define::refcounted {family {cHandle "_ptr"}} {
+    proc ::oo::define::refcounted {family} {
         set retain clRetain[::TclOpenCL::capitalize $family]
         set release clRelease[::TclOpenCL::capitalize $family]
-        set destructor [concat "{ if {\[$release \[set $cHandle]] != $::CL_SUCCESS} {
+        set destructor [concat "{ if {\[$release \[set _ptr]] != $::CL_SUCCESS} {
             return -code error {Could not release OpenCL $family}
         } }"]
-        set cloned [concat "{ if {\[$retain \[set $cHandle]] != $::CL_SUCCESS} {
+        set cloned [concat "{ if {\[$retain \[set _ptr]] != $::CL_SUCCESS} {
             return -code error {Could not retain OpenCL $family}
         } }"]
         uplevel 1 destructor $destructor
@@ -40,43 +43,45 @@ namespace eval ::TclOpenCL {
     }
 
     oo::class create Device {
-        variable _platform _id
+        variable _platform _ptr
 
         constructor {platform id} {
             set _platform $platform
-            set _id $id
+            set _ptr $id
         }
         # Memory management is just for subdevices and has no effect if this is
         # a root-level device.
-        refcounted device _id
+        refcounted device
 
         method platform {} {set _platform}
-        method id {} {set _id}
-        lazy string name
-        lazy string vendor
-        lazy string profile
-        lazy string version
-        lazy string extensions
-        lazy bool available
-        lazy uLong global_mem_size
+        method ptr {} {set _ptr}
+        method id {} {set _ptr}
+        lazy device string name
+        lazy device string vendor
+        lazy device string profile
+        lazy device string version
+        lazy device string extensions
+        lazy device bool available
+        lazy device uLong global_mem_size
     }
 
     oo::class create Platform {
         namespace path ::TclOpenCL
-        variable _id
+        variable _ptr
 
-        constructor {id} {set _id $id}
+        constructor {id} {set _ptr $id}
 
-        method id {} {set _id}
-        lazy string name platform
-        lazy string vendor platform
-        lazy string profile platform
-        lazy string version platform
-        lazy string extensions platform
+        method ptr {} {set _ptr}
+        method id {} {set _ptr}
+        lazy platform string name
+        lazy platform string vendor
+        lazy platform string profile
+        lazy platform string version
+        lazy platform string extensions
 
         method devices {{type all} {idx ""}} {
             set clType [set ::CL_DEVICE_TYPE_[string toupper $type]]
-            set deviceQuery [clGetDeviceIDs $_id $clType 0 NULL]
+            set deviceQuery [clGetDeviceIDs $_ptr $clType 0 NULL]
             if {[lindex $deviceQuery 0] == $::CL_DEVICE_NOT_FOUND} {
                 return [list]
             }
@@ -88,7 +93,7 @@ namespace eval ::TclOpenCL {
                 return [list]
             }
             set deviceIds [new_cl_device_id_array $count]
-            set ok [clGetDeviceIDs $_id $clType $count $deviceIds]
+            set ok [clGetDeviceIDs $_ptr $clType $count $deviceIds]
             if {[lindex $ok 0] != $::CL_SUCCESS} {
                 return -code error "Could not list OpenCL devices"
             }
@@ -250,7 +255,7 @@ namespace eval ::TclOpenCL {
     }
 
     oo::class create Program {
-        variable _ptr _src
+        variable _ptr _src _kerns
 
         constructor {ctx code} {
             set res [clCreateProgramWithSource [$ctx ptr] 1 $code]
@@ -271,10 +276,37 @@ namespace eval ::TclOpenCL {
             for {set i 0} {$i < $count} {incr i} {
                 cl_device_id_array_setitem $dev_ids $i [[lindex $devices $i] id]
             }
-            set ok [clBuildProgramSync $_ptr $count $dev_ids [concat {*}$args]]
+            # Need arg info to determine which C functions to call to pass
+            # arguments to the kernel.
+            set ok [clBuildProgramSync $_ptr $count $dev_ids [concat "-cl-kernel-arg-info" {*}$args]]
             if {$ok != $::CL_SUCCESS} {
                 return -code error "Could not build OpenCL program"
             }
+
+            foreach kname [[self] kernelNames] {
+                set me [self]
+                set kname [string trim $kname]
+                oo::objdefine $me method $kname {args} "
+                    my variable _kernels
+                    if {\[array get _kernels $kname] != {}} {
+                        if {\[llength \[set args]] == 0} {
+                            return \[set _kernels($kname)]
+                        }
+                        return \[\[set _kernels($kname)] {*}\[set args]]
+                    }
+                    set kern \[clCreateKernel $_ptr $kname]
+                    if {\[lindex \[set kern] 1] != $::CL_SUCCESS} {
+                        return -code error {Could not retrieve OpenCL kernel '$kname'}
+                    }
+                    set kptr \[lindex \[set kern] 0]
+                    set _kernels($kname) \[::TclOpenCL::Kernel new \[set kptr] $kname]
+                    if {\[llength \[set args]] == 0} {
+                        return \[set _kernels($kname)]
+                    }
+                    return \[\[set _kernels($kname)] {*}\[set args]]
+                "
+            }
+
             self
         }
 
@@ -292,10 +324,38 @@ namespace eval ::TclOpenCL {
         }
     }
 
+    oo::class create Kernel {
+        variable _ptr _name
+
+        constructor {ptr name} {
+            set _ptr $ptr
+            set _name $name
+        }
+        refcounted kernel
+
+        method ptr {} {set _ptr}
+        method name {} {set _name}
+        lazy kernel uInt num_args
+        lazy kernel string attributes
+
+        method argType {idx} {
+            my variable _argTypes
+            if {[array get _argTypes $idx] != ""} {
+                return _argTypes($idx)
+            }
+
+            set res [clGetKernelArgInfoString $_ptr $idx $::CL_KERNEL_ARG_TYPE_NAME]
+            if {[lindex $res 0] != $::CL_SUCCESS} {
+                return -code error "Could not get type of OpenCL kernel '$_name' argument $idx"
+            }
+            set _argTypes($idx) [lindex $res 1]
+        }
+    }
+
     proc program {name body} {
         # TODO define an OpenCL program and kernels with a very thin DSL:
         # cl::program Foo {
-        #   cl::kernel compute_stuff -ret void {__global a_x, __global a_y} {
+        #   cl::kernel compute_stuff -ret void {__global float *a, __global float *b} {
         #     ...
         #   }
         # }
