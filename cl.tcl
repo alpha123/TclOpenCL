@@ -255,7 +255,7 @@ namespace eval ::TclOpenCL {
     }
 
     oo::class create Program {
-        variable _ptr _src _kerns
+        variable _ptr _src _kerns _hasArgInfo
 
         constructor {ctx code} {
             set res [clCreateProgramWithSource [$ctx ptr] 1 $code]
@@ -276,15 +276,18 @@ namespace eval ::TclOpenCL {
             for {set i 0} {$i < $count} {incr i} {
                 cl_device_id_array_setitem $dev_ids $i [[lindex $devices $i] id]
             }
-            # Need arg info to determine which C functions to call to pass
-            # arguments to the kernel.
-            set ok [clBuildProgramSync $_ptr $count $dev_ids [concat "-cl-kernel-arg-info" {*}$args]]
+            if {[lsearch -exact $args -cl-kernel-arg-info] > -1} {
+                set _hasArgInfo 1
+            } else {
+                set _hasArgInfo 0
+            }
+            set ok [clBuildProgramSync $_ptr $count $dev_ids [concat {*}$args]]
             if {$ok != $::CL_SUCCESS} {
                 return -code error "Could not build OpenCL program"
             }
 
-            foreach kname [[self] kernelNames] {
-                set me [self]
+            set me [self]
+            foreach kname [$me kernelNames] {
                 set kname [string trim $kname]
                 oo::objdefine $me method $kname {args} "
                     my variable _kernels
@@ -299,7 +302,7 @@ namespace eval ::TclOpenCL {
                         return -code error {Could not retrieve OpenCL kernel '$kname'}
                     }
                     set kptr \[lindex \[set kern] 0]
-                    set _kernels($kname) \[::TclOpenCL::Kernel new \[set kptr] $kname]
+                    set _kernels($kname) \[::TclOpenCL::Kernel new \[set kptr] $kname $_hasArgInfo]
                     if {\[llength \[set args]] == 0} {
                         return \[set _kernels($kname)]
                     }
@@ -325,11 +328,12 @@ namespace eval ::TclOpenCL {
     }
 
     oo::class create Kernel {
-        variable _ptr _name
+        variable _ptr _name _hasArgInfo
 
-        constructor {ptr name} {
+        constructor {ptr name hasArgInfo} {
             set _ptr $ptr
             set _name $name
+            set _hasArgInfo $hasArgInfo
         }
         refcounted kernel
 
@@ -344,11 +348,76 @@ namespace eval ::TclOpenCL {
                 return _argTypes($idx)
             }
 
+            if {$_hasArgInfo == 0} {
+                return -code error "OpenCL kernel '$_name' not compiled with -cl-kernel-arg-info"
+            }
+
             set res [clGetKernelArgInfoString $_ptr $idx $::CL_KERNEL_ARG_TYPE_NAME]
             if {[lindex $res 0] != $::CL_SUCCESS} {
                 return -code error "Could not get type of OpenCL kernel '$_name' argument $idx"
             }
             set _argTypes($idx) [lindex $res 1]
+        }
+
+        method setArgs {arglist} {
+            if {[llength $arglist] != [[self] numArgs]} {
+                return -code error "OpenCL kernel '$_name' expects [[self] numArgs] arguments but got [llength $arglist]"
+            }
+
+            set i 0
+            foreach arg $arglist {
+                if {[string match -nocase null $arg]} {
+                    if {[clSetKernelArgNull $_ptr $i] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase int(*) $arg] || [string is integer $arg]} {
+                    if {[clSetKernelArgInt $_ptr $i [regsub -nocase {^int\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase uint(*) $arg] || [string match -nocase unsigned(*) $arg]} {
+                    if {[clSetKernelArgUInt $_ptr $i [regsub -nocase {^(?:uint|unsigned)\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase long(*) $arg]} {
+                    if {[clSetKernelArgLong $_ptr $i [regsub -nocase {^long\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase ulong(*) $arg]} {
+                    if {[clSetKernelArgULong $_ptr $i [regsub -nocase {^ulong\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase float(*) $arg] || [string match -nocase single(*) $arg] || [string is double $arg]} {
+                    if {[clSetKernelArgFloat $_ptr $i [regsub -nocase {^(?:float|single)\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                } elseif {[string match -nocase double(*) $arg]} {
+                    if {[clSetKernelArgDouble $_ptr $i [regsub -nocase {^double\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
+                    }
+                }
+
+                incr i
+            }
+
+            self
+        }
+
+        method runBlocking {queue work_dims global_work_off global_work_sz local_work_sz args} {
+            [self] setArgs $args
+            set gwkoff [new_size_t_array $work_dims]
+            set gwksz [new_size_t_array $work_dims]
+            set lwksz [new_size_t_array $work_dims]
+            for {set i 0} {$i < $work_dims} {incr i} {
+                size_t_array_setitem $gwkoff $i [lindex $global_work_off $i]
+                size_t_array_setitem $gwksz $i [lindex $global_work_sz $i]
+                size_t_array_setitem $lwksz $i [lindex $local_work_sz $i]
+            }
+            set evts [new_cl_event_array 0]
+            set evt_out [new_cl_event_array 1]
+            set res [clEnqueueNDRangeKernel [$queue ptr] $_ptr $work_dims $gwkoff $gwksz $lwksz 0 $evts $evt_out]
+            if {[lindex $res 0] != $::CL_SUCCESS} {
+                return -code error "Failed to run OpenCL kernel '$_name'"
+            }
         }
     }
 

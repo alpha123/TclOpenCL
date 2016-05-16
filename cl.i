@@ -487,6 +487,10 @@ typedef unsigned long long cl_ulong;
 typedef unsigned long long size_t;
 typedef long long intptr_t;
 typedef unsigned long long uintptr_t;
+typedef float cl_float;
+typedef double cl_double;
+
+%array_functions(size_t, size_t_array)
 
 // Not a real OpenCL type! Just used to pass raw memory to OpenCL functions from
 // Tcl.
@@ -533,9 +537,6 @@ typedef cl_bitfield cl_mem_migration_flags;
 typedef cl_bitfield cl_kernel_arg_type_qualifier;
 
 /*** SWIG STUFF ***/
-
-%apply char **OUTPUT { char **s_out };
-%apply size_t *OUTPUT { size_t *slen_out };
 
 /*** VECTCL INTEGRATION ***/
 
@@ -859,3 +860,26 @@ typedClGetKernelArgInfo(AddressQualifier,cl_kernel_arg_address_qualifier)
 typedClGetKernelArgInfo(AccessQualifier,cl_kernel_arg_access_qualifier)
 typedClGetKernelArgInfo(TypeQualifier,cl_kernel_arg_type_qualifier)
 
+%define typedClSetKernelArg(name,type)
+cl_int clSetKernelArg ## name (cl_kernel k, cl_uint idx, type val);
+%{
+cl_int clSetKernelArg ## name (cl_kernel k, cl_uint idx, type val) {
+  return clSetKernelArg(k, idx, sizeof val, &val);
+}
+%}
+%enddef
+
+typedClSetKernelArg(Int,cl_int)
+typedClSetKernelArg(UInt,cl_uint)
+typedClSetKernelArg(Long,cl_long)
+typedClSetKernelArg(ULong,cl_ulong)
+typedClSetKernelArg(Float,cl_float)
+typedClSetKernelArg(Double,cl_double)
+cl_int clSetKernelArgNull(cl_kernel k, cl_uint idx);
+%{
+cl_int clSetKernelArgNull(cl_kernel k, cl_uint idx) {
+  return clSetKernelArg(k, idx, sizeof(void *), NULL);
+}
+%}
+
+cl_int clEnqueueNDRangeKernel(cl_command_queue, cl_kernel, cl_uint, size_t *, size_t *, size_t *, cl_uint, cl_event *, cl_event *);
