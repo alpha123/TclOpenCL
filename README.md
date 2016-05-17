@@ -1,4 +1,4 @@
-# A VecTcl extension for numeric computation on heterogeneous parallel platforms
+# A VecTcl Extension For Parallel Numeric Computation on Heterogeneous Platforms
 
 TclOpenCL provides both low-level and higher-level access to OpenCL 1.2+ APIs
 via SWIG and a TclOO wrapper.
@@ -9,7 +9,7 @@ via SWIG and a TclOO wrapper.
 
 ### Binaries
 
-Building TclOpenCL on Windows is a bit of a pain. You can download binary releases [on GitHub](no_you_cant_yet). These have been verified to work with ActiveTcl 8.6 on 64-bit Windows 10 and the NVIDIA platform.
+Building TclOpenCL on Windows is a bit of a pain. You can download binary releases [on GitHub](https://github.com/alpha123/TclOpenCL/releases). These have been verified to work with ActiveTcl 8.6 on 64-bit Windows 10 and the NVIDIA platform.
 
 TclOpenCL requires [VecTcl](https://github.com/auriocus/VecTcl), [SWIG](http://swig.org/), and an
 OpenCL implementation for your platform.
