@@ -8,8 +8,14 @@
 %{
 #include <assert.h>
 #include <inttypes.h>
+#ifdef HAVE_CL_CL_H
 #include <CL/cl.h>
-#include <vectcl.h>
+#elif defined(HAVE_OPENCL_CL_H)
+#include <OpenCL/cl.h>
+#else
+#error No OpenCL header
+#endif
+#include <vectcl/vectcl.h>
 %}
 
 /*** CL DEFINES ***/

@@ -1,0 +1,20 @@
+# Binary stuff
+*.dll
+*.so
+*.o
+*.a
+*.lib
+
+# Releases
+*.zip
+
+# SWIG output
+cl_wrap.c
+
+# Output of configure
+Makefile
+pkgIndex.tcl
+config.*
+
+# Autotools junk
+autom4te.cache/
