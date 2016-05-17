@@ -19,7 +19,7 @@ OpenCL implementation for your platform.
 - AMD: Install the
   [AMD Accelerated Parallel Processing SDK](http://developer.amd.com/tools-and-sdks/opencl-zone/amd-accelerated-parallel-processing-app-sdk/)
 - Intel CPU, HD Graphics, and Iris Graphics: Find the
-  [Intel OpenCL Drivers](https://software.intel.com/en-us/articles/opencl-drivers
+  [Intel OpenCL Drivers](https://software.intel.com/en-us/articles/opencl-drivers)
   for your CPU and iGPU
 
 Once that's installed, `git clone https://github.com/alpha123/TclOpenCL` and do
