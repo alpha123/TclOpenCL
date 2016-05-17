@@ -217,9 +217,10 @@ namespace eval ::TclOpenCL {
     }
 
     oo::class create Buffer {
-        variable _ptr
+        variable _ptr _ctx
 
         constructor {ctx arr args} {
+            set _ctx $ctx
             set opts [dict create {*}$args]
             set mode $::CL_MEM_READ_WRITE
             if {[dict exists $opts -mode]} {
@@ -242,16 +243,29 @@ namespace eval ::TclOpenCL {
                 }
             }
             set flags [expr {$mode | $hostMode | $hostAccess}]
-            # clCreateBufferFromNumArray always uses the numarray's size. Any
-            # value will work for the size argument, so just use 0.
             set res [clCreateBufferFromNumArray [$ctx ptr] $flags $arr]
             if {[lindex $res 1] != $::CL_SUCCESS} {
                 return -code error "Could not create OpenCL buffer"
             }
             set _ptr [lindex $res 0]
         }
+        refcounted memObject
 
         method ptr {} {set _ptr}
+
+        # Copy contents to a VecTcl array
+        method copyTo {queue varname} {
+            set flags [expr $::CL_MEM_WRITE_ONLY | $::CL_MEM_USE_HOST_PTR]
+            set res [clCreateBufferFromNumArray [$_ctx ptr] $flags $arr]
+            if {[lindex $res 1] != $::CL_SUCCESS} {
+                return -code error "Could not copy OpenCL buffer"
+            }
+            set outBuf [lindex $res 0]
+            set res [clEnqueueCopyNumArrayBuffer [$queue ptr] $_ptr $outBuf 0 0 0 NULL NULL]
+            if {[lindex $res 0] != $::CL_SUCCESS} {
+                return -code error "Could not copy OpenCL buffer"
+            }
+        }
     }
 
     oo::class create Program {
@@ -394,6 +408,12 @@ namespace eval ::TclOpenCL {
                     if {[clSetKernelArgDouble $_ptr $i [regsub -nocase {^double\((.*)?\)$} $arg {\1}]] != $::CL_SUCCESS} {
                         return -code error "Failed to set argument $i of OpenCL kernel '$_name'"
                     }
+                } else {
+                    # Assume buffer
+                    set code [clSetKernelArgNumArrayBuffer $_ptr $i [$arg ptr]]
+                    if {$code != $::CL_SUCCESS} {
+                        return -code error "Failed to set argument $i of OpenCL kernel '$_name'; $code"
+                    }
                 }
 
                 incr i
@@ -412,12 +432,11 @@ namespace eval ::TclOpenCL {
                 size_t_array_setitem $gwksz $i [lindex $global_work_sz $i]
                 size_t_array_setitem $lwksz $i [lindex $local_work_sz $i]
             }
-            set evts [new_cl_event_array 0]
-            set evt_out [new_cl_event_array 1]
-            set res [clEnqueueNDRangeKernel [$queue ptr] $_ptr $work_dims $gwkoff $gwksz $lwksz 0 $evts $evt_out]
+            set res [clEnqueueNDRangeKernel [$queue ptr] $_ptr $work_dims $gwkoff $gwksz $lwksz 0 NULL NULL]
             if {[lindex $res 0] != $::CL_SUCCESS} {
-                return -code error "Failed to run OpenCL kernel '$_name'"
+                return -code error "Failed to run OpenCL kernel '$_name'; [lindex $res 0]"
             }
+            lindex $res 1
         }
     }
 

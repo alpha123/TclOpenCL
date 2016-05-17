@@ -536,15 +536,32 @@ typedef cl_bitfield cl_mem_flags;
 typedef cl_bitfield cl_mem_migration_flags;
 typedef cl_bitfield cl_kernel_arg_type_qualifier;
 
-/*** SWIG STUFF ***/
-
 /*** VECTCL INTEGRATION ***/
 
-%typemap(in) (void *NUMARRAY, size_t NUMARRAY_SIZE) {
+%inline %{
+  typedef struct {
+    NumArrayInfo info;
+    cl_mem buf;
+    // Store the cl_mem buffer size explicitly, because it may differ from
+    // info->bufsize in case of f32 buffers.
+    size_t bufsize;
+    void *host_raw;
+  } NumArray_Buffer;
+%}
+
+%typemap(in) NumArray_Buffer *CREATE_FROM_NUMARRAY {
   Tcl_Obj *arr = $input;
   NumArrayInfo *arr_info = NumArrayGetInfoFromObj(interp, arr);
-  $1 = NumArrayGetPtrFromObj(interp, arr);
-  $2 = arr_info->bufsize;
+  NumArray_Buffer *buf;
+  buf = calloc(1, sizeof *buf);
+  buf->host_raw = NumArrayGetPtrFromObj(interp, arr);
+  buf->bufsize = arr_info->bufsize;
+  memcpy(&buf->info, arr_info, sizeof buf->info);
+  buf->info.dims = calloc(arr_info->nDim, sizeof(int));
+  buf->info.pitches = calloc(arr_info->nDim, sizeof(int));
+  memcpy(buf->info.dims, arr_info->dims, arr_info->nDim * sizeof(int));
+  memcpy(buf->info.pitches, arr_info->pitches, arr_info->nDim * sizeof(int));
+  $1 = buf;
 }
 
 // Hack to get access to the interpreter so we can init VecTcl.
@@ -735,17 +752,37 @@ cl_int clReleaseCommandQueue(cl_command_queue);
 
 cl_mem clCreateBuffer(cl_context, cl_mem_flags, size_t, cl_byte *, cl_int *OUTPUT);
 
-// buffer/size in opposite order from the real function to ease writing typemaps
-// slightly.
-cl_mem clCreateBufferFromNumArray(cl_context, cl_mem_flags, void *NUMARRAY, size_t NUMARRAY_SIZE, cl_int *OUTPUT);
+NumArray_Buffer *clCreateBufferFromNumArray(cl_context, cl_mem_flags, NumArray_Buffer *CREATE_FROM_NUMARRAY, cl_int *OUTPUT);
 %{
-cl_mem clCreateBufferFromNumArray(cl_context c, cl_mem_flags fl, void *na, size_t na_size, cl_int *err_ret) {
-  return clCreateBuffer(c, fl, na_size, na, err_ret);
+void CL_CALLBACK cleanupNumArrayBuffer(cl_mem _, void *udata) {
+  (void)_;
+  NumArray_Buffer *na_buf = udata;
+  free(na_buf->info.dims);
+  free(na_buf->info.pitches);
+  free(na_buf);
+}
+
+NumArray_Buffer *clCreateBufferFromNumArray(cl_context c, cl_mem_flags fl, NumArray_Buffer *na_buf, cl_int *err_ret) {
+  na_buf->buf = clCreateBuffer(c, fl, na_buf->info.bufsize, na_buf->host_raw, err_ret);
+  if (*err_ret == CL_SUCCESS) {
+    *err_ret = clSetMemObjectDestructorCallback(na_buf->buf, cleanupNumArrayBuffer, na_buf);
+  }
+  return na_buf;
 }
 %}
 
+cl_int clRetainMemObject(cl_mem);
+cl_int clReleaseMemObject(cl_mem);
+
 cl_int clEnqueueCopyBuffer(cl_command_queue, cl_mem, cl_mem, size_t, size_t, size_t,
                            cl_uint, cl_event *, cl_event *OUTPUT);
+
+cl_int clEnqueueCopyNumArrayBuffer(cl_command_queue queue, NumArray_Buffer *src, NumArray_Buffer *dst, size_t src_off, size_t dst_off, cl_uint nevents, cl_event *wait_for, cl_event *evt_ret);
+%{
+cl_int clEnqueueCopyNumArrayBuffer(cl_command_queue queue, NumArray_Buffer *src, NumArray_Buffer *dst, size_t src_off, size_t dst_off, cl_uint nevents, cl_event *wait_for, cl_event *evt_ret) {
+  return clEnqueueCopyBuffer(queue, src->buf, dst->buf, src_off, dst_off, src->bufsize, nevents, wait_for, evt_ret);
+}
+%}
 
 
 cl_program clCreateProgramWithSource(cl_context, cl_uint, const char **CL_PROGRAM,
@@ -882,4 +919,11 @@ cl_int clSetKernelArgNull(cl_kernel k, cl_uint idx) {
 }
 %}
 
-cl_int clEnqueueNDRangeKernel(cl_command_queue, cl_kernel, cl_uint, size_t *, size_t *, size_t *, cl_uint, cl_event *, cl_event *);
+cl_int clSetKernelArgNumArrayBuffer(cl_kernel k, cl_uint idx, NumArray_Buffer *);
+%{
+cl_int clSetKernelArgNumArrayBuffer(cl_kernel k, cl_uint idx, NumArray_Buffer *na_buf) {
+  return clSetKernelArg(k, idx, sizeof(cl_mem), &na_buf->buf);
+}
+%}
+
+cl_int clEnqueueNDRangeKernel(cl_command_queue, cl_kernel, cl_uint, size_t *, size_t *, size_t *, cl_uint, cl_event *, cl_event *BOTH);
