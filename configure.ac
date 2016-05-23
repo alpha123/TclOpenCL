@@ -35,7 +35,7 @@ AC_CONFIG_AUX_DIR(tclconfig)
 # Ensure SWIG is available
 #--------------------------------------------------------------------
 
-AX_PKG_SWIG(3.0.0, [], [AC_MSG_ERROR([SWIG is required to build TclOpenCL.])])
+AX_PKG_SWIG(3.0.0, [], [AC_MSG_NOTICE([SWIG is required to modify TclOpenCL.])])
 
 #--------------------------------------------------------------------
 # Check that OpenCL headers and libraries are available and functional.

@@ -8,9 +8,6 @@
 # Releases
 *.zip
 
-# SWIG output
-cl_wrap.c
-
 # Output of configure
 Makefile
 pkgIndex.tcl

@@ -146,7 +146,7 @@ TCLSH		= $(PKG_ENV) $(TCLSH_ENV) $(TCLSH_PROG)
 
 SHARED_BUILD	= @SHARED_BUILD@
 
-INCLUDES	= @PKG_INCLUDES@ @TCL_INCLUDES@
+INCLUDES	= @PKG_INCLUDES@ @TCL_INCLUDES@ @vectcl_INCLUDE_SPEC@
 #INCLUDES	= @PKG_INCLUDES@ @TCL_INCLUDES@ @TK_INCLUDES@ @TK_XINCLUDES@
 
 PKG_CFLAGS	= @PKG_CFLAGS@
@@ -296,7 +296,6 @@ $(PKG_STUB_LIB_FILE): $(PKG_STUB_OBJECTS)
 # As necessary, add $(srcdir):$(srcdir)/compat:....
 #========================================================================
 
-.PHONY: cl_wrap.c
 cl_wrap.c: swig/cl.i
 	$(SWIG) -tcl8 -o $@ $<
 

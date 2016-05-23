@@ -630,6 +630,7 @@ MAKE_LIB
 vectcl_STUB_LIB_PATH
 vectcl_STUB_LIB_SPEC
 vectcl_STUB_LIB_FILE
+vectcl_INCLUDE_SPEC
 vectcl_LIB_SPEC
 vectcl_LIB_FILE
 vectcl_SRC_DIR
@@ -2406,7 +2407,8 @@ fi
 done
 
         if test -z "$SWIG" ; then
-                as_fn_error $? "SWIG is required to build TclOpenCL." "$LINENO" 5
+                { $as_echo "$as_me:${as_lineno-$LINENO}: SWIG is required to modify TclOpenCL." >&5
+$as_echo "$as_me: SWIG is required to modify TclOpenCL." >&6;}
         elif test -n "3.0.0" ; then
                 { $as_echo "$as_me:${as_lineno-$LINENO}: checking SWIG version" >&5
 $as_echo_n "checking SWIG version... " >&6; }
@@ -2458,7 +2460,8 @@ $as_echo "$swig_version" >&6; }
                                 { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: SWIG version >= 3.0.0 is required.  You have $swig_version." >&5
 $as_echo "$as_me: WARNING: SWIG version >= 3.0.0 is required.  You have $swig_version." >&2;}
                                 SWIG=''
-                                as_fn_error $? "SWIG is required to build TclOpenCL." "$LINENO" 5
+                                { $as_echo "$as_me:${as_lineno-$LINENO}: SWIG is required to modify TclOpenCL." >&5
+$as_echo "$as_me: SWIG is required to modify TclOpenCL." >&6;}
                         else
                                 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for SWIG library" >&5
 $as_echo_n "checking for SWIG library... " >&6; }
@@ -2471,7 +2474,8 @@ $as_echo "$SWIG_LIB" >&6; }
                         { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: cannot determine SWIG version" >&5
 $as_echo "$as_me: WARNING: cannot determine SWIG version" >&2;}
                         SWIG=''
-                        as_fn_error $? "SWIG is required to build TclOpenCL." "$LINENO" 5
+                        { $as_echo "$as_me:${as_lineno-$LINENO}: SWIG is required to modify TclOpenCL." >&5
+$as_echo "$as_me: SWIG is required to modify TclOpenCL." >&6;}
                 fi
         fi
 
@@ -9260,6 +9264,8 @@ $as_echo "$as_me: WARNING: Found Makefile - using build library specs for vectcl
         vectcl_INCLUDE_SPEC=${vectcl_BUILD_INCLUDE_SPEC}
         vectcl_LIBRARY_PATH=${vectcl_LIBRARY_PATH}
     fi
+
+
 
 
 

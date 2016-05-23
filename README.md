@@ -11,8 +11,9 @@ via SWIG and a TclOO wrapper.
 
 Building TclOpenCL on Windows is a bit of a pain. You can download binary releases [on GitHub](https://github.com/alpha123/TclOpenCL/releases). These have been verified to work with ActiveTcl 8.6 on 64-bit Windows 10 and the NVIDIA platform.
 
-TclOpenCL requires [VecTcl](https://github.com/auriocus/VecTcl), [SWIG](http://swig.org/), and an
-OpenCL implementation for your platform.
+TclOpenCL requires [VecTcl](https://github.com/auriocus/VecTcl) and an OpenCL
+implementation for your platform. Hacking on TclOpenCL requires
+[SWIG](http://swig.org/).
 
 - NVIDIA: Install the
   [NVIDIA CUDA SDK](https://developer.nvidia.com/cuda-downloads)
