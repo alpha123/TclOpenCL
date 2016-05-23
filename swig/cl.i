@@ -15,7 +15,7 @@
 #else
 #error No OpenCL header
 #endif
-#include <vectcl/vectcl.h>
+#include <vectcl.h>
 %}
 
 /*** CL DEFINES ***/

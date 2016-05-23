@@ -14,7 +14,8 @@ cl_wrap.c
 # Output of configure
 Makefile
 pkgIndex.tcl
-config.*
+config.status
+config.log
 
-# Autotools junk
+# Autotools cache
 autom4te.cache/

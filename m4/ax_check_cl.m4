@@ -71,7 +71,7 @@ CPPFLAGS="$CL_CFLAGS $CPPFLAGS"
 ax_save_LIBS=$LIBS
 LIBS=""
 ax_check_libs="-lOpenCL -lCL"
-for ax_lib in $ax_check_libs; do
+for ax_lib in -lOpenCL -lCL "-framework OpenCL"; do
   AS_IF([test X$ax_compiler_ms = Xyes],
         [ax_try_lib=`echo $ax_lib | $SED -e 's/^-l//' -e 's/$/.lib/'`],
         [ax_try_lib=$ax_lib])
